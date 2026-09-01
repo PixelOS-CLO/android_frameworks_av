@@ -1577,9 +1577,7 @@ bool NuPlayer::Decoder::shouldEnableVsyncForVideo(
     bool isVideoCodec = (
         !strcasecmp(MEDIA_MIMETYPE_VIDEO_HEVC, mime.c_str()) ||
         !strcasecmp(MEDIA_MIMETYPE_VIDEO_AV1, mime.c_str()) ||
-        !strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mime.c_str()) ||
-        !strcasecmp(MEDIA_MIMETYPE_VIDEO_H263, mime.c_str()) ||
-        !strcasecmp(MEDIA_MIMETYPE_VIDEO_MPEG4, mime.c_str())
+        !strcasecmp(MEDIA_MIMETYPE_VIDEO_AVC, mime.c_str())
     );
 
     if (isVideoCodec && pixels <= 2073600 && frameRate > 0 && frameRate <= 30) {
@@ -1648,8 +1646,13 @@ void NuPlayer::Decoder::teardownVsyncCallbacks() {
 void NuPlayer::Decoder::vsyncThreadLoop() {
     ALOGV("NuPlayerDecoder: VSync thread loop started");
 
+    // Use pollOnce (not pollAll): pollOnce returns after each epoll_wait so the
+    // loop re-checks mVsyncModeEnabled every iteration. pollAll() re-loops while
+    // a callback fires, which can swallow teardown's wake() and block join().
+    // wake() uses a latched eventfd, so the indefinite (-1) wait is always
+    // interrupted at teardown without needing a poll timeout.
     while (mVsyncModeEnabled.load(std::memory_order_acquire)) {
-        int result = mVsyncLooper->pollAll(-1);
+        int result = mVsyncLooper->pollOnce(-1);
 
         if (result == Looper::POLL_ERROR) {
             ALOGE("NuPlayerDecoder: VSync looper poll error");
